@@ -198,14 +198,14 @@ if [ ! -z $decode_iter ]; then
   iter_opts=" --iter $decode_iter "
 fi
 if [ $stage -le 17 ]; then
-    echo "here"
-    echo "test set $test_set"
-  for decode_set in $test_set; do
-      echo "decode set $decode_set"
+    for decode_set in $test_set; do
+        
       steps/nnet3/decode.sh --acwt 1.0 --post-decode-acwt 10.0 \
           --nj $decode_nj --cmd "$cuda_cmd" $iter_opts \
           --online-ivector-dir exp/nnet3${nnet3_affix}/ivectors_${decode_set}_hires \
           $graph_dir data/${decode_set}_hires $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_phone_bg
+
+      steps/get_ctm_fast.sh --frame-shift 0.03  --cmd "$cuda_cmd" data/${decode_set}_hires $graph_dir $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_phone_bg $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_phone_bg/score_10
 
 
 
