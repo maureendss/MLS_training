@@ -7,8 +7,8 @@ sbatch_gpu_req="--account ank@gpu --partition=gpu_p2l --gres=gpu:1 --time=01:00:
 test_set=""
 
 # configs for 'chain'
-stage=14 # if 0, set to 11 if don't want to run ivectors
-decode_nj=50
+stage=0 # if 0, set to 11 if don't want to run ivectors
+decode_nj=20
 train_set=train_960_cleaned
 gmm=tri6b_cleaned
 nnet3_affix=_cleaned
@@ -60,6 +60,7 @@ local/nnet3/run_ivector_common.sh --stage $stage \
                                   --gmm $gmm \
                                   --num-threads-ubm 6 --num-processes 3 \
                                   --nnet3-affix "$nnet3_affix" \
+                                  --test-set "$test_set" \
                                   || exit 1;
                                   # --test-set "$test_set" || exit 1;
 
@@ -183,12 +184,13 @@ if [ $stage -le 15 ]; then
 
 fi
 
-graph_dir=$dir/graph_tgsmall
+graph_dir=$dir/graph_phone_bg
 if [ $stage -le 16 ]; then
   # Note: it might appear that this $lang directory is mismatched, and it is as
   # far as the 'topo' is concerned, but this script doesn't read the 'topo' from
   # the lang directory.
-  utils/mkgraph.sh --self-loop-scale 1.0 --remove-oov data/${train_set}/lang_test_tgsmall $dir $graph_dir
+    utils/mkgraph.sh --self-loop-scale 1.0 --remove-oov data/${train_set}/lang_phone_bg $dir $graph_dir
+    
 fi
 
 iter_opts=
@@ -196,56 +198,25 @@ if [ ! -z $decode_iter ]; then
   iter_opts=" --iter $decode_iter "
 fi
 if [ $stage -le 17 ]; then
-  rm $dir/.error 2>/dev/null || true
-  for decode_set in test_clean test_other dev_clean dev_other; do
-      (
+    echo "here"
+    echo "test set $test_set"
+  for decode_set in $test_set; do
+      echo "decode set $decode_set"
       steps/nnet3/decode.sh --acwt 1.0 --post-decode-acwt 10.0 \
           --nj $decode_nj --cmd "$cuda_cmd" $iter_opts \
           --online-ivector-dir exp/nnet3${nnet3_affix}/ivectors_${decode_set}_hires \
-          $graph_dir data/${decode_set}_hires $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_tgsmall || exit 1
-      steps/lmrescore.sh --cmd "$cuda_cmd" --self-loop-scale 1.0 data/lang_test_{tgsmall,tgmed} \
-          data/${decode_set}_hires $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_{tgsmall,tgmed} || exit 1
-      steps/lmrescore_const_arpa.sh \
-          --cmd "$cuda_cmd" data/lang_test_{tgsmall,tglarge} \
-          data/${decode_set}_hires $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_{tgsmall,tglarge} || exit 1
-      steps/lmrescore_const_arpa.sh \
-          --cmd "$cuda_cmd" data/lang_test_{tgsmall,fglarge} \
-          data/${decode_set}_hires $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_{tgsmall,fglarge} || exit 1
-      ) || touch $dir/.error &
+          $graph_dir data/${decode_set}_hires $dir/decode_${decode_set}${decode_iter:+_$decode_iter}_phone_bg
+
+
+
+
   done
-  wait
-  if [ -f $dir/.error ]; then
-    echo "$0: something went wrong in decoding"
-    exit 1
-  fi
+
+  
 fi
 
-if $test_online_decoding && [ $stage -le 18 ]; then
-  # note: if the features change (e.g. you add pitch features), you will have to
-  # change the options of the following command line.
-  steps/online/nnet3/prepare_online_decoding.sh \
-       --mfcc-config conf/mfcc_hires.conf \
-       $lang exp/nnet3${nnet3_affix}/extractor $dir ${dir}_online
+exit 1
 
-  rm $dir/.error 2>/dev/null || true
-  for data in test_clean test_other dev_clean dev_other; do
-    (
-      nspk=$(wc -l <data/${data}_hires/spk2utt)
-      # note: we just give it "data/${data}" as it only uses the wav.scp, the
-      # feature type does not matter.
-      steps/online/nnet3/decode.sh \
-          --acwt 1.0 --post-decode-acwt 10.0 \
-          --nj $nspk --cmd "$cuda_cmd" \
-          $graph_dir data/${data} ${dir}_online/decode_${data}_tgsmall || exit 1
-
-    ) || touch $dir/.error &
-  done
-  wait
-  if [ -f $dir/.error ]; then
-    echo "$0: something went wrong in decoding"
-    exit 1
-  fi
-fi
 
 
 exit 0;

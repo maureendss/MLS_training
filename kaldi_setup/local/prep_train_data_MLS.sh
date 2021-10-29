@@ -94,6 +94,20 @@ if [ ! -d $tgt_dir/lang ]; then
 fi
 
 #Is this useful? 
+if [ ! -f $tgt_dir/lang_test_phones ] && [ "$run_lm" == "True" ]; then
+    lm=data/MLS_LM_phones/${lang}.arpa
+    test=$tgt_dir/lang_test_lm_phones
+    mkdir -p $test
+    cp -r $tgt_dir/lang/* $tgt_dir/lang_test_lm_3g
+    arpa2fst --disambig-symbol=#0 --read-symbol-table=$test/words.txt $lm $test/G.fst
+
+#    $test/G.fst
+    
+fi
+
+
+
+#Is this useful? 
 if [ ! -f $tgt_dir/lang_test_lm_3g ] && [ "$run_lm" == "True" ]; then
 
     lm_3g=$lm_dir/3-gram_lm.arpa
@@ -101,6 +115,7 @@ if [ ! -f $tgt_dir/lang_test_lm_3g ] && [ "$run_lm" == "True" ]; then
     mkdir -p $test
     cp -r $tgt_dir/lang/* $tgt_dir/lang_test_lm_3g
     arpa2fst --disambig-symbol=#0 --read-symbol-table=$test/words.txt $lm_3g $test/G.fst
+    arpa2fst --keep_isymbols=false--keep_osymbols=false  --read-symbol-table=$test/words.txt $lm_3g $test/G.fst
 #    $test/G.fst
     
 fi

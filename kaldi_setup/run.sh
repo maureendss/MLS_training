@@ -7,7 +7,7 @@
 
 mfccdir=mfcc
 stage=2
-
+tdnn_stage=0
 
 stage=0
 train=true   # set to false to disable the training-related scripts
@@ -26,7 +26,7 @@ lang=english
 . utils/parse_options.sh  # e.g. this parses the --stage option if supplied.
 
 tr_data=MLS-${lang}_tr-100h
-
+ts_data=CV-${lang}_ts-10h
 
 # you might not want to do this for interactive shells.
 set -e
@@ -55,11 +55,13 @@ fi
 
 
 if [ $stage -le 3 ]; then
-  for part in $tr_data; do
+  for part in $tr_data $ts_data; do
     steps/make_mfcc.sh --cmd "$train_cmd" --nj 40 data/$part exp/make_mfcc/$part $mfccdir
     steps/compute_cmvn_stats.sh data/$part exp/make_mfcc/$part $mfccdir
   done
 fi
+
+
 
 if [ $stage -le 7 ]; then
   # Make some small data subsets for early system-build stages.  Note, there are 29k
@@ -116,6 +118,11 @@ if [ $stage -le 12 ]; then
     steps/align_fmllr.sh --nj 20 --cmd "$train_cmd" \
                          data/${tr_data} data/${tr_data}/lang \
                          exp/$lang/tri3b exp/$lang/tri3b_ali
+
+    # creata a phone bigram LM using the alignments phones.
+    if [ ! -d data/${tr_data}/lang_phone_bg ]; then
+        local/make_phone_bigram_lang_nounk.sh data/$tr_data/lang exp/$lang/tri3b_ali data/${tr_data}/lang_phone_bg;
+    fi
     
     # train another LDA+MLLT+SAT system on the entire 100 hour subset
     steps/train_sat.sh  --cmd "$train_cmd" 4200 40000 \
@@ -123,16 +130,23 @@ if [ $stage -le 12 ]; then
                         exp/$lang/tri3b_ali exp/$lang/tri4b
 fi
 
+if [ $stage -eq 13 ] && [ "$decode" == true] ; then
+ utils/mkgraph.sh data/${tr_data}/lang_phone_bg \
+                   exp/$lang/tri4b  exp/$lang/tri4b/graph_phone_bg   
+
+    steps/decode_fmllr.sh --nj 20 --cmd "$decode_cmd" exp/$lang/tri4b/graph_phone_bg data/$ts_dir exp/$lang/tri4b/decode_phone_bg_$ts_dir
+fi
+
 
 if [ $stage -eq 20 ]; then
   # train and test nnet3 tdnn models on the entire data with data-cleaning.
-    local/chain/run_tdnn.sh --train_set $tr_data --gmm "$lang/tri4b" --nnet3_affix "_$lang"
+    local/chain/run_tdnn.sh --train_set $tr_data --gmm "$lang/tri4b" --nnet3_affix "_$lang" --test_set $ts_data --stage $tdnn_stage
     
 fi
 
 if [ $stage -eq 201 ]; then
   # train and test nnet3 tdnn models on the entire data with data-cleaning.
-    local/chain/run_tdnn.sh --train_set $tr_data --gmm "$lang/tri4b" --nnet3_affix "_$lang" --affix "1d_15ep" --epochs 15
+    local/chain/run_tdnn.sh --train_set $tr_data --gmm "$lang/tri4b" --nnet3_affix "_$lang" --affix "1d_15ep" --epochs 15 --stage $tdnn_stage --test_set $ts_data
     
 fi
 
